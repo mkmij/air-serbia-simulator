@@ -1,0 +1,11 @@
+#+title: README.org
+#+author: Marko Mijajlović
+#+date: 2025:12:23
+
+** Projekat za ispit iz predmeta Funkcionalno programiranje, zimski semestar 2025/2026
+
+Jednostavna igrica u shmup (space shoot 'em up) maniru ali sa mnogo manje feature-a. Optimizovana nogama, nadam se da nećemo spaliti neki računar prilikom odbrane.
+
+Asseti:
+- [[https://opengameart.org/content/space-background-1][pozadina]] [CC0 licenca]
+- [[https://opengameart.org/content/space-ship-shooter-pixel-art-assets][ostali]] [CC0 licenca]
