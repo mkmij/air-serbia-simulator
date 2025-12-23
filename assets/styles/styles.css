@@ -14,6 +14,24 @@ canvas {
     background-color: #ccc;
 }
 
-.enemy {
-    transform: rotate(180deg);
+.asteroid {
+    animation: asteroid-spin infinite 3s linear;
+}
+
+@keyframes: asteroid-spin {
+    0% {
+        transform: rotate(0);
+    }
+    25% {
+        transform: rotate(90deg);
+    }
+    50% {
+        transform: rotate(180deg);
+    }
+    75% {
+        transform: rotate(270deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
 }
