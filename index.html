@@ -6,14 +6,37 @@
     <meta name="author" content="Marko Mijajlović"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FP-PROJEKAT-IGRICA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Doto:wght@100..900&display=swap" rel="stylesheet">
     <link rel="icon" href="assets/favicon-16x16.png" type="image/x-icon" media="screen" />
     <link rel="stylesheet" href="assets/styles/styles.css" type="text/css" media="screen" />
   </head>
   <body>
-    <div style="display: none;">
-        <img id="ship" src="assets/ship.png"/>
-    </div>
-    <canvas id="game"></canvas>
+      <div class="container">
+      <div class="game-container">
+          <div class="info-line">
+              <div id="lives" class="lives">
+                  <img src="assets/heart.png"/>
+                  <img src="assets/heart.png"/>
+                  <img src="assets/heart.png"/>
+              </div>
+              <div class="scores">
+                <span id="avg" class="info-text">AVERAGE SCORE: 0</span>
+                <span id="hs" class="info-text">HIGH SCORE: 0</span>
+                <span id="score" class="info-text">SCORE: 0</span>
+              </div>
+          </div>          
+            <canvas id="game"></canvas>
+      </div>
+      <div class="legend">
+          <h1>AIR SERBIA SIMULATOR</h1>
+          <h1>← → Kretanje</h1>
+          <h1>SPC Pucanje</h1>
+          <h1>P Pauza</h1>
+          <h1>R Reset</h1>
+      </div>
+      </div>
     <script type="text/javascript" src="assets/scripts/script.js">
     </script>
   </body>

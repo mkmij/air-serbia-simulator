@@ -3,35 +3,67 @@ html {
     align-items: center;
     justify-content: center;
     height: 100vh;
+    font-family: "Doto", sans-serif;
+    font-variation-settings: "ROND" 0;
 }
 
 body {
     background-color: #c6c6c6;
 }
 
-canvas {
-    border: 1px solid black;
-    background-color: #ccc;
+.container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 1474px;
+    background-image: url('../synthwave-3941721_1920.jpg');
+    background-position: center;
 }
 
-.asteroid {
-    animation: asteroid-spin infinite 3s linear;
+.legend {
+    width: 400px;
+    margin-left: 30px;
+    margin-top: 120px;
+    color: white;
+    font-weight: 900;
 }
 
-@keyframes: asteroid-spin {
-    0% {
-        transform: rotate(0);
-    }
-    25% {
-        transform: rotate(90deg);
-    }
-    50% {
-        transform: rotate(180deg);
-    }
-    75% {
-        transform: rotate(270deg);
-    }
-    100% {
-        transform: rotate(360deg);
-    }
+.game-container {
+    display: flex;
+    flex-direction: column;
+    width: 1024px;
+    height: 818px;
+    padding: 30px 0 0 30px;
+    margin: 0 auto;
+}
+
+.info-line {
+    height: 30px;
+    width: 1024px;
+    background-color: black;
+    color: white;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 900;
+}
+
+.scores {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+}
+
+.info-text {
+    margin-right: 30px;
+}
+
+.lives {
+    margin-left: 30px;
+}
+
+.lives > img {
+    height: 30px;
 }
