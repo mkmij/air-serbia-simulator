@@ -7,6 +7,7 @@ window.addEventListener('load', () => {
 
     //global state jej
     let gameState = {
+        lastTime: 0,
         fps: 60,
         canvas: {
             canvasWidth: canvas.width,
@@ -19,16 +20,18 @@ window.addEventListener('load', () => {
         paused: false,
         bg: null,
         player: null,
-        enemies: [],
-        asteroids: [],
+        enemies: new Map(),
+        asteroids: new Map(),
         occupiedSpace: new Map(),
-        missiles: [],
+        missiles: new Map(),
     };
 
     gameState.bg = new Bg('assets/back.png', canvas.width, canvas.height, gameState);
-    gameState.player = new Ship('player', 'assets/ship.png', canvas.width, canvas.height, 16, 24, 2.5, 0, 9, gameState);
-    gameState.enemies.push(new Ship('enemy', 'assets/enemy-medium.png', canvas.width, canvas.height, 32, 16, 2, 0, 1, gameState));
-    gameState.asteroids.push(new Asteroid('assets/asteroid.png', canvas.width, canvas.height, 160, 160, 0.4, 0, 0, gameState));
+    gameState.player = new Ship('player', 'assets/ship.png', canvas.width, canvas.height, 16, 24, 2.5, 0, 9, 5, gameState);
+    const enemy = new Ship('enemy', 'assets/enemy-medium.png', canvas.width, canvas.height, 32, 16, 2, 0, 1, 2, gameState);
+    gameState.enemies.set(enemy.id, enemy);
+    const asteroid = new Asteroid('assets/asteroid.png', canvas.width, canvas.height, 160, 160, 0.4, 0, 0, 1, gameState);
+    gameState.asteroids.set(asteroid.id, asteroid);
 
     document.addEventListener('keydown', (event) => {
         if (event.key === 'ArrowLeft') {
@@ -49,27 +52,29 @@ window.addEventListener('load', () => {
     });
 
 
-
-    function gameLoop() {
-        //check collisions
+    function gameLoop(timestamp) {
+        if (!timestamp) timestamp = performance.now();
+        let delta = timestamp - gameState.lastTime;
+        gameState.lastTime = timestamp;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        gameState.bg.draw(ctx);
         gameState.bg.update();
-        gameState.enemies.forEach(enemy => {
+        gameState.bg.draw(ctx);
+        gameState.enemies.values().forEach(enemy => {
+            enemy.update('', delta);
             enemy.draw(ctx);
-            enemy.update('');
         });
-        gameState.asteroids.forEach(asteroid => {
-            asteroid.draw(ctx);
+        gameState.asteroids.values().forEach(asteroid => {
             asteroid.update();
+            asteroid.draw(ctx);
         });
-        gameState.missiles.forEach(missile => {
+        gameState.missiles.values().forEach(missile => {
+            missile.calculateCollisions();
+            missile.update(delta);
             missile.draw(ctx);
-            missile.update();
         });
-        gameState.player.draw(ctx);
         let direction = gameState.shipMovingLeft ? 'left' : gameState.shipMovingRight ? 'right' : '';
-        gameState.player.update(direction);
+        gameState.player.update(direction, delta);
+        gameState.player.draw(ctx);
         setTimeout(() => requestAnimationFrame(gameLoop), 1000 / gameState.fps);
     };
 
@@ -87,13 +92,32 @@ class GameObject {
 }
 
 class Sprite extends GameObject {
-    constructor(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState) {
+    constructor(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState) {
         super(src, canvasWidth, canvasHeight, gameState);
         this.spriteWidth = spriteWidth;
         this.spriteHeight = spriteHeight;
         this.scale = scale || 1;
         this.minFrame = minFrame;
         this.maxFrame = maxFrame;
+        this.currentFrame = 0;
+        this.currFrameX = 0;
+        this.currFrameY = 0;
+        this.framesPerRow = framesPerRow;
+        this.frameTimer = 0;
+    }
+    draw(ctx) {
+        ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY * this.spriteHeight, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
+    }
+    update(delta) {
+        if (this.frameTimer > this.frameInterval) {
+            if (this.currentFrame < this.maxFrame) this.currentFrame++;
+            else this.currentFrame = this.minFrame;
+            this.currFrameX = this.currentFrame % this.framesPerRow;
+            this.currFrameY = Math.floor(this.currentFrame / this.framesPerRow);
+            this.frameTimer = 0;
+        } else {
+            this.frameTimer += delta;
+        }
     }
 }
 
@@ -122,8 +146,8 @@ class Bg extends GameObject {
 }
 
 class Ship extends Sprite {
-    constructor(type, src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState) {
-        super(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState);
+    constructor(type, src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState) {
+        super(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState);
         this.type = type;
         this.width = this.spriteWidth * this.scale;
         this.height = this.spriteHeight * this.scale;
@@ -136,11 +160,9 @@ class Ship extends Sprite {
             this.x = Math.floor(Math.random() * (this.canvasWidth - 2 * this.spriteWidth));
             this.y = this.height / this.scale;
         }
-        this.currFrame = 0;
-        this.currFrameX = 0;
-        this.currFrameY = 0;
-        //prebrza je animacija, moram nekako da je usporim
-        this.iteration = 0;
+        //smanji fps
+        this.frameTimer = 0;
+        this.frameInterval = 100;
     }
     draw(ctx) {
         //checkCollisions
@@ -148,24 +170,24 @@ class Ship extends Sprite {
         const id = this.type === 'player' ? 'player' : this.id;
         updateOccupiedSpace(this.x, this.y, this.width, this.height, id, this.gameState);
     }
-    update(direction = '') {
-        if (this.iteration < 3) {
-            this.iteration += 1;
-            return;
+    update(direction = '', delta) {
+        if (this.frameTimer > this.frameInterval) {
+            if (this.currentFrame < this.maxFrame) this.currentFrame++;
+            else this.currentFrame = this.minFrame;
+            this.currFrameX = this.currentFrame % this.framesPerRow;
+            this.currFrameY = Math.floor(this.currentFrame / this.framesPerRow);
+            this.frameTimer = 0;
+        } else {
+            this.frameTimer += delta;
         }
-        this.iteration = 0;
-        if (this.currFrame < this.maxFrame) this.currFrame++;
-        else this.currFrame = this.minFrame;
-        this.currFrameX = this.currFrame % 5;
-        this.currFrameY = Math.floor(this.currFrame / 5);
         if (direction === 'left' && this.x > 0) this.x -= 15;
         else if (direction === 'right' && this.x < this.canvasWidth - this.width) this.x += 15;
     }
 }
 
 class Asteroid extends Sprite {
-    constructor(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState) {
-        super(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState);
+    constructor(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState) {
+        super(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState);
         this.width = this.spriteWidth * this.scale;
         this.height = this.spriteHeight * this.scale;
         this.x = Math.floor(Math.random() * (this.canvasWidth - 2 * this.spriteWidth));
@@ -181,10 +203,8 @@ class Asteroid extends Sprite {
         updateOccupiedSpace(this.x, this.y, this.width, this.height, this.id, this.gameState);
     }
     update() {
-
         if (this.y === this.canvasHeight + this.height) {
-            let idx = this.gameState.asteroids.findIndex(el => el.id === this.id);
-            this.gameState.asteroids = this.gameState.asteroids.toSpliced(idx, 1);
+            this.gameState.asteroids.delete(this.id);
         }
         this.rotationCounter += 2;
         this.y += 1;
@@ -192,37 +212,61 @@ class Asteroid extends Sprite {
 }
 
 class Missile extends Sprite {
-    constructor(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState) {
-        super(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, gameState);
+    constructor(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState) {
+        super(src, canvasWidth, canvasHeight, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, gameState);
         this.width = this.spriteWidth * this.scale;
         this.height = this.spriteHeight * this.scale;
-        this.x = this.gameState.player.x + this.width / 2 + 4; //4 iz nekog razloga centrira, ne znam zasto izgleda lose bez cetvorke
+        this.x = this.gameState.player.x + 4;//4 iz nekog razloga centrira, ne znam zasto izgleda lose bez cetvorke
         this.y = this.gameState.player.y - this.gameState.player.height / 2 - this.height / 2;
-        this.currFrameX = 0;
-        this.currFrameY = 0;
-        this.currFrame = 0;
+        //smanji fps
+        this.frameTimer = 0;
+        this.frameInterval = 50;
     }
     draw(ctx) {
-        // ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY * this.spriteHeight, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
-        ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY * this.spriteHeight, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
+        ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
     }
-    update() {
+    update(delta) {
         if (this.y === this.canvasHeight + this.height) {
-            let idx = this.gameState.missiles.findIndex(el => el.id === this.id);
-            this.gameState.missiles = this.gameState.missiles.toSpliced(idx, 1);
+            this.gameState.missiles.delete(this.id);
         }
-        if (this.currFrame < this.maxFrame) this.currFrame++;
-        else this.currFrame = this.minFrame;
-        this.currFrameX = this.currFrame % 2;
-        this.currFrameY = Math.floor(this.currFrame / 2);
-        this.y -= 3;
+        if (this.frameTimer > this.frameInterval) {
+            this.currFrameX = this.currentFrame % this.framesPerRow;
+            this.currentFrame = this.currentFrame < this.maxFrame ? this.currentFrame += 1 : this.minFrame;
+            this.frameTimer = 0;
+        } else {
+            this.frameTimer += delta;
+        }
+        this.y -= 5;
+    }
+    calculateCollisions() {
+        const enemyPositions = this.gameState.enemies.values().map(enemy => {
+            return {
+                id: enemy.id,
+                xRange: {
+                    lower: enemy.x - enemy.width / 2,
+                    higher: enemy.x + enemy.width / 2,
+                },
+                yRange: {
+                    lower: enemy.y - enemy.height / 2,
+                    higher: enemy.y + enemy.height / 2,
+                }
+            };
+        }).toArray();
+        const hitEnemies = enemyPositions.filter(pos => this.y <= pos.yRange.higher && (this.x >= pos.xRange.lower && this.x <= pos.xRange.higher));
+        if (hitEnemies.length > 0) {
+            console.log("enemy hit!!!");
+            const hit = hitEnemies[0];
+            this.gameState.enemies.delete(hit.id);
+            this.gameState.missiles.delete(this.id);
+        }
     }
 }
 
 const shoot = (gameState) => {
-    const missile = new Missile('assets/laser-bolts.png', gameState.canvas.canvasWidth, gameState.canvas.canvasHeight, 16, 32, 1, 0, 1, gameState);
-    gameState.missiles.push(missile);
-}
+    const missile = new Missile('assets/laser-bolts.png', gameState.canvas.canvasWidth, gameState.canvas.canvasHeight, 16, 32, 2, 0, 1, 2, gameState);
+    gameState.missiles.set(missile.id, missile);
+};
+
 
 const createImage = (src) => {
     let img = new Image();
