@@ -24,6 +24,7 @@ window.addEventListener('load', () => {
         asteroids: new Map(),
         occupiedSpace: new Map(),
         missiles: new Map(),
+        explosions: new Map(),
     };
 
     gameState.bg = new Bg('assets/back.png', canvas.width, canvas.height, gameState);
@@ -72,6 +73,10 @@ window.addEventListener('load', () => {
             missile.update(delta);
             missile.draw(ctx);
         });
+        gameState.explosions.values().forEach(boom => {
+            boom.update(delta);
+            boom.draw(ctx);
+        });
         let direction = gameState.shipMovingLeft ? 'left' : gameState.shipMovingRight ? 'right' : '';
         gameState.player.update(direction, delta);
         gameState.player.draw(ctx);
@@ -104,19 +109,28 @@ class Sprite extends GameObject {
         this.currFrameY = 0;
         this.framesPerRow = framesPerRow;
         this.frameTimer = 0;
+        this.x = 0;
+        this.y = 0;
+        this.frameInterval = 180;
+        this.duration = 0;
     }
     draw(ctx) {
-        ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY * this.spriteHeight, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
+        ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY * this.spriteHeight, this.spriteWidth, this.spriteHeight, this.x, this.y, this.spriteWidth, this.spriteHeight);
     }
     update(delta) {
-        if (this.frameTimer > this.frameInterval) {
-            if (this.currentFrame < this.maxFrame) this.currentFrame++;
-            else this.currentFrame = this.minFrame;
-            this.currFrameX = this.currentFrame % this.framesPerRow;
-            this.currFrameY = Math.floor(this.currentFrame / this.framesPerRow);
-            this.frameTimer = 0;
+        if (this.duration < 1000) {
+            if (this.frameTimer > this.frameInterval) {
+                if (this.currentFrame < this.maxFrame) this.currentFrame++;
+                else this.currentFrame = this.minFrame;
+                this.currFrameX = this.currentFrame % this.framesPerRow;
+                this.currFrameY = Math.floor(this.currentFrame / this.framesPerRow);
+                this.frameTimer = 0;
+            } else {
+                this.frameTimer += delta;
+            }
+            this.duration += delta;
         } else {
-            this.frameTimer += delta;
+            this.gameState.explosions.delete(this.id);
         }
     }
 }
@@ -236,28 +250,29 @@ class Missile extends Sprite {
         } else {
             this.frameTimer += delta;
         }
-        this.y -= 5;
+        this.y -= 8;
     }
     calculateCollisions() {
         const enemyPositions = this.gameState.enemies.values().map(enemy => {
             return {
                 id: enemy.id,
-                xRange: {
-                    lower: enemy.x - enemy.width / 2,
-                    higher: enemy.x + enemy.width / 2,
-                },
-                yRange: {
-                    lower: enemy.y - enemy.height / 2,
-                    higher: enemy.y + enemy.height / 2,
-                }
+                x: enemy.x,
+                y: enemy.y,
+                width: enemy.width,
+                height: enemy.height,
             };
         }).toArray();
-        const hitEnemies = enemyPositions.filter(pos => this.y <= pos.yRange.higher && (this.x >= pos.xRange.lower && this.x <= pos.xRange.higher));
+        const hitEnemies = enemyPositions.filter(pos => this.y <= pos.y + pos.height / 2 && (this.x >= pos.x - pos.width / 2 && this.x <= pos.x + pos.width / 2));
         if (hitEnemies.length > 0) {
             console.log("enemy hit!!!");
             const hit = hitEnemies[0];
             this.gameState.enemies.delete(hit.id);
             this.gameState.missiles.delete(this.id);
+
+            const explosion = explode(this.gameState);
+            explosion.x = hit.x;
+            explosion.y = hit.y;
+            this.gameState.explosions.set(explosion.id, explosion);
         }
     }
 }
@@ -265,6 +280,10 @@ class Missile extends Sprite {
 const shoot = (gameState) => {
     const missile = new Missile('assets/laser-bolts.png', gameState.canvas.canvasWidth, gameState.canvas.canvasHeight, 16, 32, 2, 0, 1, 2, gameState);
     gameState.missiles.set(missile.id, missile);
+};
+
+const explode = (gameState) => {
+    return new Sprite('assets/explosion.png', gameState.canvas.canvasWidth, gameState.canvas.canvasHeight, 16, 16, 1, 0, 4, 5, gameState);
 };
 
 
