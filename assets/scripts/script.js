@@ -22,7 +22,7 @@ const gameState = {
   explosions: new Map(),
 };
 //http://127.0.0.1:8000/
-//TODO: pauza, legenda, zivoti, muzika?
+//TODO: muzika?
 window.addEventListener('load', () => {
   const canvas = document.getElementById('game');
   canvas.width = gameState.canvas.width;
@@ -90,6 +90,7 @@ window.addEventListener('load', () => {
         boom.draw(ctx);
       });
     }
+    gameState.player.checkCollisions();
     gameState.player.update(delta);
     gameState.player.draw(ctx);
     setTimeout(() => requestAnimationFrame(gameLoop), 1000 / gameState.fps);
@@ -176,7 +177,6 @@ class Ship extends Sprite {
   constructor(type, src, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow) {
     super(src, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow);
     this.type = type;
-    //mora drugacije za mene i za neprijatelje
     if (this.type === 'player') {
       this.x = this.canvasWidth / 2 - this.width / 2;
       this.y = this.canvasHeight - this.height - 5; //mnogo je zakucano za dno
@@ -186,7 +186,6 @@ class Ship extends Sprite {
     }
     //smanji fps zbog epilepsije
     this.frameInterval = 100;
-    //TODO: hit counter, collision detection, hit counter
   }
   update(delta) {
     if (this.frameTimer > this.frameInterval) {
@@ -205,9 +204,26 @@ class Ship extends Sprite {
     else if (gameState.shipMovingRight && this.x < this.canvasWidth - this.width) this.x += 15;
   }
   hit() {
-    if (this.type === 'enemy') {
-      if (this.hitCounter == 1) gameState.enemies.delete(this.id);
-      this.hitCounter -= 1;
+    if (this.hitCounter == 1) {
+      if (this.type === 'player') {
+        this.hitCounter = 0;
+        gameState.lives = 0;
+        gameState.lost = true;
+      } else {
+        gameState.currentScore += 1;
+        gameState.enemies.delete(this.id);
+      }
+    }
+    this.hitCounter -= 1;
+  }
+  checkCollisions() {
+    const coords = { x: this.x, y: this.y };
+    const hit = getCollisions('asteroids', coords);
+    if (hit) {
+      gameState.asteroids.delete(hit.id);
+      explode(hit);
+      updateLives(`life${this.hitCounter}`);
+      this.hit();
     }
   }
 }
@@ -234,7 +250,10 @@ class Asteroid extends Sprite {
     this.y += 1;
   }
   hit() {
-    if (this.hitCounter == 1) gameState.asteroids.delete(this.id);
+    if (this.hitCounter == 1) {
+      gameState.currentScore += 1;
+      gameState.asteroids.delete(this.id);
+    }
     this.hitCounter -= 1;
   }
 }
@@ -334,4 +353,29 @@ const resetGameState = () => {
   gameState.lives = 3;
   gameState.shipMovingLeft = false;
   gameState.shipMovingRight = false;
+}
+
+class ObjectFactory {
+  static spawn(object) {
+    switch (object) {
+      case 'ship':
+        break;
+      case 'asteroid':
+        break;
+      case 'missile':
+        break;
+      default:
+        console.log("ne");
+    }
+  }
+}
+
+const updateLives = (id) => {
+  const life = document.getElementById(id);
+  console.log(life);
+  life.remove();
+};
+
+const updateScore = () => {
+
 }
