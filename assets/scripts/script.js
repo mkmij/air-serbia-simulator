@@ -1,6 +1,7 @@
 //global state jej
 const gameState = {
   lastTime: 0,
+  enemyTimer: 0,
   fps: 60,
   canvas: {
     width: 1024,
@@ -9,8 +10,9 @@ const gameState = {
   lives: 3,
   shipMovingLeft: false,
   shipMovingRight: false,
-  currentScore: null,
-  highScore: null,
+  currentScore: 0,
+  highScore: 0,
+  avgScore: [],
   running: false,
   paused: false,
   lost: false,
@@ -21,8 +23,6 @@ const gameState = {
   missiles: new Map(),
   explosions: new Map(),
 };
-//http://127.0.0.1:8000/
-//TODO: muzika?
 window.addEventListener('load', () => {
   const canvas = document.getElementById('game');
   canvas.width = gameState.canvas.width;
@@ -32,12 +32,9 @@ window.addEventListener('load', () => {
 
   gameState.bg = new Bg('assets/back.png');
   gameState.player = new Ship('player', 'assets/ship.png', 16, 24, 2.5, 0, 9, 5);
-  const enemy = new Ship('enemy', 'assets/enemy-medium.png', 32, 16, 2, 0, 1, 2);
-  gameState.enemies.set(enemy.id, enemy);
-  const asteroid = new Asteroid('assets/asteroid.png', 160, 160, 0.4, 0, 0, 1);
-  gameState.asteroids.set(asteroid.id, asteroid);
 
   document.addEventListener('keydown', (event) => {
+    if (gameState.paused || gameState.lost) return;
     if (event.key === 'ArrowLeft') {
       gameState.shipMovingLeft = true;
     } else if (event.key === 'ArrowRight') {
@@ -58,6 +55,8 @@ window.addEventListener('load', () => {
       }
     } else if (event.key === 'p') {
       gameState.paused = !gameState.paused;
+    } else if (event.key === 'r') {
+      resetGameState();
     }
   });
 
@@ -72,6 +71,9 @@ window.addEventListener('load', () => {
     if (!gameState.running || gameState.paused || gameState.lost) {
       renderText(ctx);
     } else {
+      const res = shouldCreateEnemy(delta);
+      if (res.enemy) EnemyFactory.spawn('ship');
+      if (res.asteroid) EnemyFactory.spawn('asteroid');
       gameState.enemies.values().forEach(enemy => {
         enemy.update(delta);
         enemy.draw(ctx);
@@ -209,8 +211,12 @@ class Ship extends Sprite {
         this.hitCounter = 0;
         gameState.lives = 0;
         gameState.lost = true;
+        gameState.running = false;
+        updateHighScore();
+        updateAverageScore();
       } else {
         gameState.currentScore += 1;
+        updateScore();
         gameState.enemies.delete(this.id);
       }
     }
@@ -247,11 +253,12 @@ class Asteroid extends Sprite {
       gameState.asteroids.delete(this.id);
     }
     this.rotationCounter += 2;
-    this.y += 1;
+    this.y += 3;
   }
   hit() {
     if (this.hitCounter == 1) {
       gameState.currentScore += 1;
+      updateScore();
       gameState.asteroids.delete(this.id);
     }
     this.hitCounter -= 1;
@@ -282,6 +289,7 @@ class Missile extends Sprite {
     this.y -= 8;
   }
   onCollision(thing, hit) {
+    debugger;
     gameState[thing].get(hit.id).hit();
     gameState.missiles.delete(this.id);
     explode(hit);
@@ -353,29 +361,90 @@ const resetGameState = () => {
   gameState.lives = 3;
   gameState.shipMovingLeft = false;
   gameState.shipMovingRight = false;
-}
+  gameState.score = 0;
+  resetLives();
+  gameState.player.hitCounter = 3;
+  gameState.enemies.clear();
+  gameState.asteroids.clear();
+  gameState.missiles.clear();
+};
 
-class ObjectFactory {
+const resetLives = () => {
+  const lives = document.getElementsByClassName('life');
+  lives.namedItem('life1').classList.remove('hidden');
+  lives.namedItem('life2').classList.remove('hidden');
+  lives.namedItem('life3').classList.remove('hidden');
+};
+
+class EnemyFactory {
   static spawn(object) {
     switch (object) {
       case 'ship':
+        let enemy = new Ship('enemy', 'assets/enemy-medium.png', 32, 16, 2, 0, 1, 2);
+        while (EnemyFactory.isSpaceOccupied(enemy.x, enemy.y)) {
+          enemy = new Ship('enemy', 'assets/enemy-medium.png', 32, 16, 2, 0, 1, 2);
+        }
+        gameState.enemies.set(enemy.id, enemy);
         break;
       case 'asteroid':
-        break;
-      case 'missile':
+        let asteroid = new Asteroid('assets/asteroid.png', 160, 160, 0.4, 0, 0, 1);
+        while (EnemyFactory.isSpaceOccupied(asteroid.x, asteroid.y)) {
+          asteroid = new Asteroid('asteroid', 'assets/asteroid-medium.png', 32, 16, 2, 0, 1, 2);
+        }
+        gameState.asteroids.set(asteroid.id, asteroid);
         break;
       default:
         console.log("ne");
     }
   }
+  static isSpaceOccupied(x, y) {
+    let coords = { x: x, y: y };
+    return getCollisions('enemies', coords) || getCollisions('asteroids', coords);
+  }
 }
 
 const updateLives = (id) => {
   const life = document.getElementById(id);
-  console.log(life);
-  life.remove();
+  life.classList.add('hidden');
 };
 
 const updateScore = () => {
-
+  const score = document.getElementById('score');
+  score.innerHTML = `SCORE: ${gameState.currentScore}`;
 }
+
+const updateHighScore = () => {
+  gameState.highScore = gameState.currentScore >= gameState.highScore ? gameState.currentScore : gameState.highScore;
+  const score = document.getElementById('hs');
+  score.innerHTML = `HIGH SCORE: ${gameState.highScore}`;
+};
+const updateAverageScore = () => {
+  gameState.avgScore.push(gameState.currentScore);
+  gameState.avgScore = avg(sum, div)(gameState.avgScore);
+  const as = document.getElementById('avg');
+  as.innerHTML = `AVERAGE SCORE: ${gameState.avgScore}`;
+};
+
+const sum = (arr) => {
+  return arr.reduce((acc, curr) => acc + curr, 0);
+};
+const div = (x) => {
+  return x / gameState.avgScore.length;
+};
+const avg = (...fns) => (initVal) => fns.reduce((acc, fn) => fn(acc), initVal);
+
+const shouldCreateEnemy = (delta) => {
+  let enemy = false;
+  let asteroid = false;
+  if (gameState.enemyTimer > 1000) {
+    enemy = gameState.enemies.size < 7 && Math.random() < 0.25;
+    asteroid = gameState.asteroids.size < 15 && Math.random() < 0.35;
+    gameState.enemyTimer = 0;
+  } else {
+    gameState.enemyTimer += delta;
+  }
+  return {
+    enemy: enemy,
+    asteroid: asteroid
+  };
+};
