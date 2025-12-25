@@ -12,7 +12,8 @@ const gameState = {
   shipMovingRight: false,
   currentScore: 0,
   highScore: 0,
-  avgScore: [],
+  scores: [],
+  avgScore: 0,
   running: false,
   paused: false,
   lost: false,
@@ -23,15 +24,9 @@ const gameState = {
   missiles: new Map(),
   explosions: new Map(),
 };
+
 window.addEventListener('load', () => {
-  const canvas = document.getElementById('game');
-  canvas.width = gameState.canvas.width;
-  canvas.height = gameState.canvas.height;
-  const ctx = canvas.getContext('2d');
-
-
-  gameState.bg = new Bg('assets/back.png');
-  gameState.player = new Ship('player', 'assets/ship.png', 16, 24, 2.5, 0, 9, 5);
+  const ctx = init();
 
   document.addEventListener('keydown', (event) => {
     if (gameState.paused || gameState.lost) return;
@@ -48,11 +43,11 @@ window.addEventListener('load', () => {
     } else if (event.key === 'ArrowRight') {
       gameState.shipMovingRight = false;
     } else if (event.key === ' ') {
-      shoot(gameState);
+      ObjectFactory.spawn('missile');
     } else if (event.key === 'Enter') {
       if (gameState.lost || !gameState.running) {
         resetGameState();
-      }
+      } else if (gameState.paused) gameState.paused = !gameState.paused;
     } else if (event.key === 'p') {
       gameState.paused = !gameState.paused;
     } else if (event.key === 'r') {
@@ -60,38 +55,41 @@ window.addEventListener('load', () => {
     }
   });
 
-
   function gameLoop(timestamp) {
     if (!timestamp) timestamp = performance.now();
     let delta = timestamp - gameState.lastTime;
     gameState.lastTime = timestamp;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, gameState.canvas.width, gameState.canvas.height);
+
     gameState.bg.update();
     gameState.bg.draw(ctx);
+
     if (!gameState.running || gameState.paused || gameState.lost) {
       renderText(ctx);
     } else {
-      const res = shouldCreateEnemy(delta);
-      if (res.enemy) EnemyFactory.spawn('ship');
-      if (res.asteroid) EnemyFactory.spawn('asteroid');
+      maybeCreateEnemy(delta);
       gameState.enemies.values().forEach(enemy => {
         enemy.update(delta);
         enemy.draw(ctx);
       });
+
       gameState.asteroids.values().forEach(asteroid => {
         asteroid.update();
         asteroid.draw(ctx);
       });
+
       gameState.missiles.values().forEach(missile => {
         missile.handleCollisions();
         missile.update(delta);
         missile.draw(ctx);
       });
+
       gameState.explosions.values().forEach(boom => {
         boom.update(delta);
         boom.draw(ctx);
       });
     }
+
     gameState.player.checkCollisions();
     gameState.player.update(delta);
     gameState.player.draw(ctx);
@@ -134,10 +132,7 @@ class Sprite extends GameObject {
   draw(ctx) {
     ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY * this.spriteHeight, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
   }
-  update(delta) {
-    if (this.duration > 500) {
-      gameState.explosions.delete(this.id);
-    }
+  update(delta, ...fns) {
     if (this.frameTimer > this.frameInterval) {
       if (this.currentFrame < this.maxFrame) this.currentFrame++;
       else this.currentFrame = this.minFrame;
@@ -147,7 +142,8 @@ class Sprite extends GameObject {
     } else {
       this.frameTimer += delta;
     }
-    this.duration += delta;
+
+    if (fns && fns.length > 0) fns.forEach(func => func());
   }
 }
 
@@ -186,19 +182,11 @@ class Ship extends Sprite {
       this.x = Math.floor(Math.random() * (this.canvasWidth - 2 * this.spriteWidth));
       this.y = this.height / this.scale;
     }
-    //smanji fps zbog epilepsije
+    //smanji fps inace epilepsija
     this.frameInterval = 100;
   }
   update(delta) {
-    if (this.frameTimer > this.frameInterval) {
-      if (this.currentFrame < this.maxFrame) this.currentFrame++;
-      else this.currentFrame = this.minFrame;
-      this.currFrameX = this.currentFrame % this.framesPerRow;
-      this.currFrameY = Math.floor(this.currentFrame / this.framesPerRow);
-      this.frameTimer = 0;
-    } else {
-      this.frameTimer += delta;
-    }
+    super.update(delta);
     if (this.type === 'player') this.move();
   }
   move() {
@@ -215,7 +203,6 @@ class Ship extends Sprite {
         updateHighScore();
         updateAverageScore();
       } else {
-        gameState.currentScore += 1;
         updateScore();
         gameState.enemies.delete(this.id);
       }
@@ -227,7 +214,7 @@ class Ship extends Sprite {
     const hit = getCollisions('asteroids', coords);
     if (hit) {
       gameState.asteroids.delete(hit.id);
-      explode(hit);
+      ObjectFactory.spawn('explosion', hit);
       updateLives(`life${this.hitCounter}`);
       this.hit();
     }
@@ -268,7 +255,7 @@ class Asteroid extends Sprite {
 class Missile extends Sprite {
   constructor(src, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow) {
     super(src, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow);
-    this.x = gameState.player.x + 4; //4 iz nekog razloga centrira, ne znam zasto izgleda lose bez cetvorke
+    this.x = gameState.player.x + gameState.player.width / 2 - this.width / 2;
     this.y = gameState.player.y - gameState.player.height / 2 - this.height / 2;
     this.frameInterval = 50;
   }
@@ -276,15 +263,11 @@ class Missile extends Sprite {
     ctx.drawImage(this.image, this.currFrameX * this.spriteWidth, this.currFrameY, this.spriteWidth, this.spriteHeight, this.x, this.y, this.width, this.height);
   }
   update(delta) {
-    if (this.y === this.canvasHeight + this.height) {
+    super.update(delta, this.updatefn);
+  }
+  updatefn = () => {
+    if (this.y <= -this.height) {
       gameState.missiles.delete(this.id);
-    }
-    if (this.frameTimer > this.frameInterval) {
-      this.currFrameX = this.currentFrame % this.framesPerRow;
-      this.currentFrame = this.currentFrame < this.maxFrame ? this.currentFrame += 1 : this.minFrame;
-      this.frameTimer = 0;
-    } else {
-      this.frameTimer += delta;
     }
     this.y -= 8;
   }
@@ -292,7 +275,7 @@ class Missile extends Sprite {
     debugger;
     gameState[thing].get(hit.id).hit();
     gameState.missiles.delete(this.id);
-    explode(hit);
+    ObjectFactory.spawn('explosion', hit);
   }
   handleCollisions() {
     const coords = { x: this.x, y: this.y };
@@ -307,18 +290,22 @@ class Missile extends Sprite {
   }
 }
 
-const shoot = () => {
-  const missile = new Missile('assets/laser-bolts.png', 16, 32, 2, 0, 1, 2);
-  gameState.missiles.set(missile.id, missile);
-};
-
-const explode = (hit) => {
-  const boom = new Sprite('assets/explosion.png', 16, 16, 2, 0, 4, 5);
-  boom.x = hit.x + hit.width / 2 - boom.scale;
-  boom.y = hit.y + hit.height / 2 - boom.scale;
-  gameState.explosions.set(boom.id, boom);
-};
-
+class Explosion extends Sprite {
+  constructor(src, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow, hit) {
+    super(src, spriteWidth, spriteHeight, scale, minFrame, maxFrame, framesPerRow);
+    this.x = hit.x + hit.width / 2 - this.scale;
+    this.y = hit.y + hit.height / 2 - this.scale;
+  }
+  update(delta) {
+    super.update(delta, () => this.updatefn(delta));
+  }
+  updatefn = (delta) => {
+    if (this.duration > 500) {
+      gameState.explosions.delete(this.id);
+    }
+    this.duration += delta;
+  }
+}
 
 const createImage = (src) => {
   let img = new Image();
@@ -346,7 +333,7 @@ const renderText = (ctx) => {
   ctx.fillStyle = "rgb(117 9 176 / 50%)";
   ctx.fillRect(20, 250, 984, 250);
   ctx.fillStyle = "rgb(255 255 255 / 100%)";
-  const text = gameState.paused ? 'PAUSED' : gameState.lost ? 'GAME OVER' : 'PRESS ENTER TO START';
+  const text = gameState.paused ? 'PAUZA' : gameState.lost ? 'GAME OVER' : 'PRITISNI ENTER DA POCNES';
   ctx.font = "48px Doto";
   const textSize = ctx.measureText(text);
   const textX = (984 - textSize.width) / 2;
@@ -361,8 +348,9 @@ const resetGameState = () => {
   gameState.lives = 3;
   gameState.shipMovingLeft = false;
   gameState.shipMovingRight = false;
-  gameState.score = 0;
+  gameState.currentScore = 0;
   resetLives();
+  updateScore();
   gameState.player.hitCounter = 3;
   gameState.enemies.clear();
   gameState.asteroids.clear();
@@ -370,28 +358,40 @@ const resetGameState = () => {
 };
 
 const resetLives = () => {
+  //cursed api boze prosti
   const lives = document.getElementsByClassName('life');
   lives.namedItem('life1').classList.remove('hidden');
   lives.namedItem('life2').classList.remove('hidden');
   lives.namedItem('life3').classList.remove('hidden');
 };
 
-class EnemyFactory {
-  static spawn(object) {
+class ObjectFactory {
+  static spawn(object, ...args) {
     switch (object) {
       case 'ship':
         let enemy = new Ship('enemy', 'assets/enemy-medium.png', 32, 16, 2, 0, 1, 2);
-        while (EnemyFactory.isSpaceOccupied(enemy.x, enemy.y)) {
+        while (ObjectFactory.isSpaceOccupied(enemy.x, enemy.y)) {
           enemy = new Ship('enemy', 'assets/enemy-medium.png', 32, 16, 2, 0, 1, 2);
         }
         gameState.enemies.set(enemy.id, enemy);
         break;
       case 'asteroid':
         let asteroid = new Asteroid('assets/asteroid.png', 160, 160, 0.4, 0, 0, 1);
-        while (EnemyFactory.isSpaceOccupied(asteroid.x, asteroid.y)) {
-          asteroid = new Asteroid('asteroid', 'assets/asteroid-medium.png', 32, 16, 2, 0, 1, 2);
+        while (ObjectFactory.isSpaceOccupied(asteroid.x, asteroid.y)) {
+          asteroid = new Asteroid('asteroid', 'assets/asteroid.png', 32, 16, 2, 0, 1, 2);
         }
         gameState.asteroids.set(asteroid.id, asteroid);
+        break;
+      case 'explosion':
+        if (!args || args.length < 1) {
+          throw new Error("nemere");
+        }
+        const boom = new Explosion('assets/explosion.png', 16, 16, 2, 0, 4, 5, args[0]);
+        gameState.explosions.set(boom.id, boom);
+        break;
+      case 'missile':
+        const missile = new Missile('assets/laser-bolts.png', 16, 32, 2, 0, 1, 2);
+        gameState.missiles.set(missile.id, missile);
         break;
       default:
         console.log("ne");
@@ -418,9 +418,10 @@ const updateHighScore = () => {
   const score = document.getElementById('hs');
   score.innerHTML = `HIGH SCORE: ${gameState.highScore}`;
 };
+
 const updateAverageScore = () => {
-  gameState.avgScore.push(gameState.currentScore);
-  gameState.avgScore = avg(sum, div)(gameState.avgScore);
+  gameState.scores.push(gameState.currentScore);
+  gameState.avgScore = Math.round(avg(sum, div)(gameState.scores));
   const as = document.getElementById('avg');
   as.innerHTML = `AVERAGE SCORE: ${gameState.avgScore}`;
 };
@@ -429,7 +430,7 @@ const sum = (arr) => {
   return arr.reduce((acc, curr) => acc + curr, 0);
 };
 const div = (x) => {
-  return x / gameState.avgScore.length;
+  return x / gameState.scores.length;
 };
 const avg = (...fns) => (initVal) => fns.reduce((acc, fn) => fn(acc), initVal);
 
@@ -447,4 +448,20 @@ const shouldCreateEnemy = (delta) => {
     enemy: enemy,
     asteroid: asteroid
   };
+};
+
+const maybeCreateEnemy = (delta) => {
+  const res = shouldCreateEnemy(delta);
+  if (res.enemy) ObjectFactory.spawn('ship');
+  if (res.asteroid) ObjectFactory.spawn('asteroid');
+};
+
+const init = () => {
+  const canvas = document.getElementById('game');
+  canvas.width = gameState.canvas.width;
+  canvas.height = gameState.canvas.height;
+  const ctx = canvas.getContext('2d');
+  gameState.bg = new Bg('assets/back.png');
+  gameState.player = new Ship('player', 'assets/ship.png', 16, 24, 2.5, 0, 9, 5);
+  return ctx;
 };
